@@ -1,0 +1,380 @@
+import weka.classifiers.Classifier;
+import weka.classifiers.meta.AttributeSelectedClassifier;
+
+import weka.attributeSelection.*;
+import weka.core.*;
+import weka.core.converters.CSVLoader;
+import weka.core.converters.ConverterUtils.*;
+import weka.classifiers.*;
+import weka.classifiers.functions.*;
+import weka.classifiers.meta.*;
+import weka.classifiers.rules.DecisionTable;
+import weka.classifiers.rules.PART;
+import weka.classifiers.trees.*;
+import weka.filters.*;
+import weka.filters.unsupervised.attribute.Remove;
+import weka.filters.unsupervised.instance.Resample;
+import weka.filters.unsupervised.attribute.NumericToNominal;
+
+import java.io.File;
+import java.util.*;
+import weka.filters.supervised.instance.SMOTE;
+
+/**
+ * performs attribute selection using CfsSubsetEval and GreedyStepwise
+ * (backwards) and trains J48 with that. Needs 3.5.5 or higher to compile.
+ * 
+ * @author FracPete (fracpete at waikato dot ac dot nz)
+ */
+public class test_classify {
+
+	/**
+	 * uses the meta-classifier
+	 */
+	protected static void useClassifier(Instances data) throws Exception {
+		System.out.println("\n1. Meta-classfier");
+		AttributeSelectedClassifier classifier = new AttributeSelectedClassifier();
+		CfsSubsetEval eval = new CfsSubsetEval();
+		GreedyStepwise search = new GreedyStepwise();
+		search.setSearchBackwards(true);
+		// J48 base = new J48();
+		Logistic base = new Logistic();
+		classifier.setClassifier(base);
+		classifier.setEvaluator(eval);
+		classifier.setSearch(search);
+		Evaluation evaluation = new Evaluation(data);
+		evaluation.crossValidateModel(classifier, data, 10, new Random(1));
+		System.out.println(evaluation.toSummaryString());
+	}
+
+	protected static void useAnyClassifier(Instances data, Classifier cl)
+	throws Exception {
+
+		// System.out.println("\n1.Any Meta-classfier");
+
+		Evaluation evaluation = new Evaluation(data);
+		evaluation.crossValidateModel(cl, data, 10, new Random(1));
+		//System.out.println(cl.getOptions().toString());
+		// System.out.println("classifier
+		// type="+cl.getClass().toString()+""+evaluation.toClassDetailsString());
+		//System.out.println(evaluation.toSummaryString());
+		System.out.println(evaluation.toMatrixString());
+		System.out.println("ROC="+evaluation.areaUnderROC(1)+" , "+
+		 "f-measure="+evaluation.fMeasure(1));
+
+		//System.out.println(evaluation.areaUnderROC(1));
+	}
+
+	/**
+	 * uses the filter
+	 */
+	protected static void useFilter(Instances data) throws Exception {
+		System.out.println("\n2. Filter");
+		weka.filters.supervised.attribute.AttributeSelection filter = new weka.filters.supervised.attribute.AttributeSelection();
+		CfsSubsetEval eval = new CfsSubsetEval();
+		GreedyStepwise search = new GreedyStepwise();
+		search.setSearchBackwards(true);
+		filter.setEvaluator(eval);
+		filter.setSearch(search);
+		filter.setInputFormat(data);
+		Instances newData = Filter.useFilter(data, filter);
+		// System.out.println(newData);
+	}
+	/**
+	 * uses the low level approach
+	 */
+	protected static int [] useLowLevel(Instances data) throws Exception {
+		System.out.println("\n3. Low-level");
+		AttributeSelection attsel = new AttributeSelection();
+		CfsSubsetEval eval = new CfsSubsetEval();
+		GreedyStepwise search = new GreedyStepwise();
+		search.setSearchBackwards(true);
+		attsel.setEvaluator(eval);
+		attsel.setSearch(search);
+		attsel.SelectAttributes(data);
+		int[] indices = attsel.selectedAttributes();
+		System.out.println("selected attribute indices (starting with 0):\n"
+				+ Utils.arrayToString(indices));
+		return indices; 
+	}
+
+	private static Instances balanceInstances(Instances data) throws Exception {
+		// System.out.println("Balancing instances...");
+		int[] classesCounts = countClasses(data);
+		int class0Count = classesCounts[0];
+		int class1Count = classesCounts[1];
+
+		double classRatio = ((double) class0Count) / ((double) class1Count);
+
+		if (classRatio <= 1.0) {
+			classRatio = 1.0 / classRatio;
+		}
+		// System.out.println(" ClassRatio = "+classRatio);
+
+		SMOTE s = new SMOTE();
+		s.setOptions(new String[] { "-C", "0", "-K", "5", "-P",
+				"" + ((classRatio - 1) * 100.0), "-S", "1" });
+		s.setInputFormat(data);
+		data = Resample.useFilter(data, s);
+
+		// System.out.println("Finished balancing instances.");
+
+		return data;
+	}
+
+	private static int[] countClasses(Instances data) {
+		int class0count = 0;
+		int class1count = 0;
+
+		for (int i = 0; i < data.numInstances(); i++) {
+			Instance inst = data.instance(i);
+
+			double val = inst.classValue();
+			if (val == 0.0) {
+				class0count++;
+			} else {
+				class1count++;
+			}
+		}
+
+		return new int[] { class0count, class1count };
+	}
+
+	protected static Instances changeToNominal(Instances data, int id)
+	throws Exception {
+
+		NumericToNominal convert = new NumericToNominal();
+		String[] options = new String[2];
+		options[0] = "-R";
+		options[1] = "\"" + id + "\""; // range of variables to make numeric
+
+		convert.setOptions(options);
+		convert.setInputFormat(data);
+
+		Instances newData = Filter.useFilter(data, convert);
+		return newData;
+	}
+
+	private static Instances readCSV(String fileName, int classIndexFromEnd)
+	throws Exception {
+		CSVLoader csv = new CSVLoader();
+		csv.setSource(new File(fileName));
+		Instances data = csv.getDataSet();
+
+		// if (classIndexFromEnd<0)
+		// data.setClassIndex(data.numAttributes() - 1);
+		// else
+		// data.setClassIndex(data.numAttributes() - classIndexFromEnd - 1);
+
+		return data;
+	}
+	private static String addOne(int[] indices){
+		String str=""; 		
+		for(int i=0; i<indices.length; i++)
+		{
+			indices[i]+=1;
+			str=str+indices[i]+",";
+		}
+		return str; 
+	} 
+
+	/**
+	 * takes a dataset as first argument
+	 * 
+	 * @param args
+	 *            the commandline arguments
+	 * @throws Exception
+	 *             if something goes wrong
+	 */
+	public static void main(String[] args) throws Exception {
+		// load data
+		System.out.println("\n0. Loading data");
+		DataSource source = new DataSource("C:\\Users\\viv\\Dropbox\\docs\\Feb_Trouble.arff");
+		Instances data = source.getDataSet();
+		data.setClassIndex(data.numAttributes() - 1);
+
+		Classifier[] models = { new Bagging(),//J48(), // a
+		};
+		String[] modelsNotes = { "." // , a decision tree
+		};
+
+		String[] attsToKeep = { "13-17,18" };
+
+		String[] attsToKeepNotes = { "All" };
+
+		// FilteredClassifier fc = new FilteredClassifier();
+		AttributeSelectedClassifier classifier = new AttributeSelectedClassifier();
+		//CfsSubsetEval eval = new CfsSubsetEval();
+		//GreedyStepwise search = new GreedyStepwise();
+		//search.setSearchBackwards(true);
+
+		// fc.setFilter(rm);
+		// // meta-classifier
+		// FilteredClassifier fc = new FilteredClassifier();
+		// fc.setFilter(rm);
+
+		// Run for each model
+		for (int i = 1; i < 31; i++) {
+			Resample rs = new Resample();
+			rs.setSampleSizePercent(100.0);
+			rs.setInvertSelection(false);
+			rs.setNoReplacement(false);
+			rs.setRandomSeed(i*2);
+			rs.setInputFormat(data);
+			Instances data1 = Filter.useFilter(data, rs); // apply filter
+			
+			//Instances data1=data; //*** CHANGE IT BACK
+
+			for (int j = 0; j < models.length; j++) {
+
+				// fc.setClassifier(models[j]);
+				classifier.setClassifier(models[j]);
+				//classifier.setEvaluator(eval);
+				//classifier.setSearch(search);
+
+
+				// System.out.println(i);
+
+				for (int k = 0; k < attsToKeep.length; k++) {
+					String[] options = new String[2];
+					options[0] = "-R"; // "range"
+					options[1] = attsToKeep[k];
+					// System.out.println(modelsNotes[j]+" :
+					// "+attsToKeepNotes[k]);
+
+					Remove remove = new Remove(); // new instance of filter
+					remove.setOptions(options); // set options
+					remove.setInvertSelection(true);
+					remove.setInputFormat(data1); // inform filter about
+					// dataset **AFTER** setting
+					// options
+					Instances nData = Filter.useFilter(data1, remove); // apply
+
+					AttributeSelection filter = new AttributeSelection();  // package weka.filters.supervised.attribute!
+					CfsSubsetEval eval = new CfsSubsetEval();
+					GreedyStepwise search = new GreedyStepwise();
+					search.setSearchBackwards(true);
+					filter.setEvaluator(eval);
+					filter.setSearch(search);
+					filter.SelectAttributes(nData);
+					// obtain the attribute indices that were selected
+					int[] indices = filter.selectedAttributes();
+
+					String[] options_as = new String[2];
+					options_as[0] = "-R"; // "range"
+					options_as[1] = addOne(indices);
+
+					Remove rma = new Remove(); // new instance of filter
+					rma.setOptions(options_as); // set options
+					rma.setInvertSelection(true);
+					rma.setInputFormat(nData); // inform filter about
+
+					//Instances newData = Filter.useFilter(nData, rma); // apply
+					Instances newData=nData;
+					//filter.setInputFormat(nData);
+					// generate new data
+					//System.out.println("NumAttributes: "+newData.numAttributes());
+
+
+
+
+					// Keeping aside the test set ->
+
+					weka.filters.unsupervised.instance.RemovePercentage rptest = new weka.filters.unsupervised.instance.RemovePercentage();
+
+					String[] options_rptest = { "-P", "30.0", "-V" };
+					rptest.setOptions(options_rptest);
+					rptest.setInputFormat(newData);
+					Instances test = Filter.useFilter(newData, rptest);
+					// System.out.println("test: " + test.numInstances());
+					// <- END test set
+
+					weka.filters.unsupervised.instance.RemovePercentage rp = new weka.filters.unsupervised.instance.RemovePercentage();
+					String[] options_rp = new String[2];
+					options_rp[0] = "-P"; // "range"
+					options_rp[1] = "30.0";
+					rp.setInputFormat(newData);
+					rp.setOptions(options_rp);
+					Instances train = Filter.useFilter(newData, rp);
+					// System.out.println("train: " + train.numInstances());
+
+					Instances train_b = balanceInstances(train);
+					// System.out.println("train_b: " + train_b.numInstances());
+
+					weka.filters.unsupervised.instance.Randomize rz = new weka.filters.unsupervised.instance.Randomize();
+					String[] options_rz = new String[2];
+					options_rz[0] = "-S"; // "range"
+					options_rz[1] = i+"";
+					rz.setInputFormat(train_b);
+					rz.setOptions(options_rz);
+					Instances train_b_r = Filter.useFilter(train_b, rptest);
+
+//					System.out
+//					.println("train_b_r: " + train_b_r.numInstances());
+//					System.out.println("train_b_r: "
+//							+ train_b_r.numAttributes());
+
+					// Instances data = ... // from somewhere
+					// 10-fold cross-validation
+					// Evaluation evaluation = new Evaluation(data);
+					// evaluation.crossValidateModel(classifier, data, 10, new
+					// Random(1));
+					// System.out.println(evaluation.toSummaryString());
+					//useLowLevel(train_b_r);
+
+
+					// cls.buildClassifier(train);
+
+
+
+					//classifier.setEvaluator(evaluator)
+					classifier.buildClassifier(train_b_r);
+					// weka.core.SerializationHelper.write("trained_"+i+".model",
+					// fc);
+					//useAnyClassifier(test, classifier);
+					 // evaluate classifier and print some statistics
+					 Evaluation eval2 = new Evaluation(train);
+					 eval2.evaluateModel(classifier, test);
+					 System.out.println(eval2.areaUnderROC(1));
+					 //System.out.println(eval2.toMatrixString());
+					// useClassifier(newData);
+					// useLowLevel(newData);
+				}
+			}
+			// // Collect every group of predictions for current model in a
+			// FastVector
+			// FastVector predictions = new FastVector();
+
+			// // For each training-testing split pair, train and test the
+			// classifier
+			// for (int i = 0; i < trainingSplits.length; i++) {
+			// Evaluation validation = classify(models[j], trainingSplits[i],
+			// testingSplits[i]);
+
+			// predictions.appendElements(validation.predictions());
+
+			// // Uncomment to see the summary for each training-testing pair.
+			// //System.out.println(models[j].toString());
+			// }
+
+			// // Calculate overall accuracy of current classifier on all splits
+			// double accuracy = calculateAccuracy(predictions);
+
+			// // Print current classifier's name and accuracy in a complicated,
+			// // but nice-looking way.
+			// System.out.println("Accuracy of " +
+			// models[j].getClass().getSimpleName() + ": "
+			// + String.format("%.2f%%", accuracy)
+			// + "\n---------------------------------");
+		}
+
+		// // 1. meta-classifier
+		// useClassifier(data);
+
+		// // 2. filter
+		// useFilter(data);
+
+		// // 3. low-level
+
+	}
+}
