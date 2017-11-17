@@ -32,4 +32,4 @@ Files included included with compressed folder.
 Data post-processing. Features extracted and SMOTE sampling applied. 
 
 ### EDA 
-Replication of the results from Money Walks 
+Python replication of the results from Money Walks. 
