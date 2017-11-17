@@ -26,10 +26,10 @@ Replication of Bozkaya and Pentland paper [Money Walks: Implicit Mobility Behavi
 ```
 
 ### Code
-Files included included with compressed folder. 
+Files included included with compressed folder related to the analysis portion of **Money Walks**. 
 
 ### Data
-Data post-processing. Features extracted and SMOTE sampling applied. 
+Post-processing data used in the the analysis. Features extracted and SMOTE sampling applied. 
 
-### EDA 
+### EDA
 Python replication of the results from Money Walks. 
